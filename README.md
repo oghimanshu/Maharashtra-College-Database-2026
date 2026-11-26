@@ -109,6 +109,8 @@ This dataset is provided for **educational, research, and institutional outreach
 
 ---
 
-## License
+## Author & License
+
+Made by **Himanshu Gaur** ([`@oghimanshu`](https://github.com/oghimanshu) • `wtfhimanshu@outlook.com`).
 
 Licensed under the [MIT License](LICENSE).
