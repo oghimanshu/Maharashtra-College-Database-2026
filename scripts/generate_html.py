@@ -2,11 +2,13 @@
 """
 Generate a polished, self-contained GitHub Pages web app (docs/index.html) with:
 - Light & Dark mode toggle (persisted in localStorage)
-- Hero header with live stats, Download Excel & Export Filtered CSV
-- Typo-tolerant fuzzy search across all 17 fields (with '/' keyboard shortcut)
+- Hero header with live stats, dynamic GitHub Excel link & Export Filtered CSV
+- Typo-tolerant fuzzy search across all 17 fields ('/' shortcut + shareable URLs)
 - Quick MMR / Region pills, District & Category dropdowns, and Contact chips
+- Star / Shortlist bookmarks (persisted in localStorage) + WhatsApp direct chat links
+- Collapsible live Analytics Strip (Top Districts & Categories for current results)
 - Table View & Card Grid View toggle
-- Slide-over Detail Drawer showing all 17 fields with one-click Copy
+- Slide-over Detail Drawer with Prev/Next ('←'/'→') navigation & one-click Copy
 """
 
 import json
@@ -39,6 +41,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --green-soft: rgba(5, 150, 105, 0.12);
     --pink: #db2777;
     --pink-soft: rgba(219, 39, 119, 0.1);
+    --amber: #d97706;
+    --amber-soft: rgba(217, 119, 6, 0.12);
     --shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 16px rgba(15, 23, 42, 0.04);
     --shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.14);
     --mark-bg: #fef08a;
@@ -58,6 +62,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     --green-soft: rgba(52, 211, 153, 0.14);
     --pink: #f472b6;
     --pink-soft: rgba(244, 114, 182, 0.14);
+    --amber: #fbbf24;
+    --amber-soft: rgba(251, 191, 36, 0.14);
     --shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
     --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
     --mark-bg: rgba(56, 189, 248, 0.28);
@@ -77,9 +83,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .hero {
     background: linear-gradient(135deg, rgba(37, 99, 235, 0.09), rgba(79, 70, 229, 0.06), transparent);
     border-bottom: 1px solid var(--border);
-    padding: 24px 0 20px;
+    padding: 22px 0 18px;
   }
-  .container { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+  .container { max-width: 1420px; margin: 0 auto; padding: 0 20px; }
 
   .hero-top {
     display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px;
@@ -97,7 +103,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .hero-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .btn {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px; border-radius: 9px; font-size: 0.85rem; font-weight: 600;
+    padding: 8px 13px; border-radius: 9px; font-size: 0.84rem; font-weight: 600;
     border: 1px solid var(--border); background: var(--surface); color: var(--text);
     cursor: pointer; text-decoration: none; transition: all .15s ease;
   }
@@ -108,22 +114,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
   .btn-primary:hover { filter: brightness(1.08); color: #fff; }
 
-  .stats-grid {
-    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px;
-  }
+  .stats-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
   .stat-pill {
     background: var(--surface); border: 1px solid var(--border);
-    padding: 6px 13px; border-radius: 999px; font-size: 0.81rem; color: var(--muted);
+    padding: 5px 12px; border-radius: 999px; font-size: 0.8rem; color: var(--muted);
     box-shadow: var(--shadow);
   }
   .stat-pill strong { color: var(--text); font-weight: 700; }
 
-  .main { padding: 20px 0 40px; }
+  .main { padding: 18px 0 44px; }
 
   .controls-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 14px; padding: 16px; box-shadow: var(--shadow);
-    display: grid; gap: 12px; margin-bottom: 16px;
+    display: grid; gap: 12px; margin-bottom: 14px;
   }
   .search-row {
     display: grid; grid-template-columns: 1fr auto auto auto; gap: 10px; align-items: center;
@@ -160,10 +164,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     background: var(--surface); color: var(--accent); box-shadow: var(--shadow);
   }
 
-  .pills-row {
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-  }
-  .pill-label { font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+  .pills-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill-label { font-size: 0.76rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 2px; }
   .chip {
     display: inline-flex; align-items: center; gap: 5px;
     background: var(--bg); border: 1px solid var(--border);
@@ -174,28 +176,55 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .chip.active {
     background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
   }
+  .chip-star.active {
+    background: var(--amber-soft); border-color: var(--amber); color: var(--amber);
+  }
+
+  /* Collapsible Analytics Strip */
+  .analytics-panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 14px; box-shadow: var(--shadow);
+    display: none;
+  }
+  .analytics-panel.open { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .ana-col h3 { margin: 0 0 10px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .ana-row {
+    display: grid; grid-template-columns: 160px 1fr 48px; gap: 10px; align-items: center;
+    margin-bottom: 7px; font-size: 0.8rem; cursor: pointer;
+  }
+  .ana-row:hover .ana-name { color: var(--accent); }
+  .ana-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .ana-bar-bg { height: 8px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+  .ana-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; }
+  .ana-count { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* Table View */
   .table-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 14px; overflow: hidden; box-shadow: var(--shadow);
   }
-  .table-scroll { overflow-x: auto; max-height: 70vh; }
+  .table-scroll { overflow-x: auto; max-height: 68vh; }
   table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
   thead th {
     position: sticky; top: 0; z-index: 2;
     background: var(--surface-2); color: var(--muted);
-    text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border);
-    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
+    text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border);
+    font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap;
   }
-  tbody tr {
-    border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s;
-  }
+  tbody tr { border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
   tbody tr:hover { background: var(--surface-2); }
-  tbody td { padding: 12px 14px; vertical-align: top; }
-  .col-sr { width: 62px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  tbody td { padding: 11px 12px; vertical-align: top; }
+  .col-star { width: 42px; text-align: center; }
+  .col-sr { width: 58px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .college-title { font-weight: 650; color: var(--text); font-size: 0.9rem; }
   .college-sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+  .star-btn {
+    background: transparent; border: none; font-size: 1.15rem; cursor: pointer;
+    color: var(--muted); padding: 0 4px; line-height: 1; transition: transform .12s;
+  }
+  .star-btn:hover { transform: scale(1.18); }
+  .star-btn.starred { color: var(--amber); }
 
   .badge {
     display: inline-block; padding: 2px 8px; border-radius: 6px;
@@ -203,7 +232,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     white-space: nowrap;
   }
   .badge-green { background: var(--green-soft); color: var(--green); }
-  .badge-pink { background: var(--pink-soft); color: var(--pink); }
+  .wa-pill {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 1px 6px; border-radius: 5px; font-size: 0.71rem; font-weight: 600;
+    background: var(--green-soft); color: var(--green); margin-left: 5px; text-decoration: none;
+  }
+  .wa-pill:hover { filter: brightness(0.95); text-decoration: none; }
 
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -232,11 +266,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   .copy-mini {
     background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
-    border-radius: 5px; padding: 1px 6px; font-size: 0.71rem; cursor: pointer;
+    border-radius: 5px; padding: 1px 6px; font-size: 0.71rem; cursor: pointer; margin-left: 4px;
   }
   .copy-mini:hover { color: var(--text); border-color: var(--accent); }
 
-  /* Pagination */
   .pagination {
     display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
     margin-top: 16px; gap: 12px; font-size: 0.85rem; color: var(--muted);
@@ -251,26 +284,28 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
   .drawer-backdrop.open { display: flex; }
   .drawer {
-    width: min(520px, 100vw); height: 100%; background: var(--surface);
+    width: min(540px, 100vw); height: 100%; background: var(--surface);
     border-left: 1px solid var(--border); box-shadow: var(--shadow-lg);
-    overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px;
+    overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 14px;
   }
+  .drawer-nav { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .drawer-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .drawer-close {
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
     width: 34px; height: 34px; border-radius: 8px; font-size: 1.1rem; cursor: pointer;
   }
-  .detail-list { display: grid; gap: 10px; }
+  .detail-list { display: grid; gap: 9px; }
   .detail-item {
     background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
     padding: 10px 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
   }
-  .detail-label { font-size: 0.74rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .detail-label { font-size: 0.73rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .detail-val { font-size: 0.88rem; font-weight: 500; word-break: break-word; margin-top: 2px; }
 
   @media (max-width: 900px) {
     .search-row { grid-template-columns: 1fr; }
     .cards-grid { grid-template-columns: 1fr; }
+    .analytics-panel.open { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -286,9 +321,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           </div>
         </div>
         <div class="hero-actions">
+          <button class="btn" id="analyticsBtn">&#128200; Insights</button>
           <button class="btn" id="themeBtn" title="Toggle Light / Dark mode">&#127769; Dark Mode</button>
-          <a class="btn" href="https://raw.githubusercontent.com/himanshu-mishra/Maharashtra-College-Database-2026/main/data/maharashtra_colleges.xlsx" id="excelLink" download>&#128202; Excel (.xlsx)</a>
-          <button class="btn btn-primary" id="exportBtn">&#11015; Export Filtered CSV</button>
+          <a class="btn" href="../data/maharashtra_colleges.xlsx" id="excelLink" download>&#128202; Excel (.xlsx)</a>
+          <button class="btn btn-primary" id="exportBtn">&#11015; Export CSV</button>
         </div>
       </div>
       <div class="stats-grid" id="statsBar"></div>
@@ -325,7 +361,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         </div>
 
         <div class="pills-row">
-          <span class="pill-label">Must Have:</span>
+          <span class="pill-label">Filter:</span>
+          <span class="chip chip-star" id="shortlistChip">&#9733; Shortlisted (<span id="shortlistCount">0</span>)</span>
           <span class="chip" data-flag="principal">Principal Name</span>
           <span class="chip" data-flag="faculty_mobile">+91 Mobile</span>
           <span class="chip" data-flag="phone">Any Phone</span>
@@ -339,6 +376,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           <button class="btn" id="resetBtn" style="padding:5px 10px;font-size:0.8rem;">Reset</button>
         </div>
       </section>
+
+      <section class="analytics-panel" id="analyticsPanel"></section>
 
       <div id="resultsContainer"></div>
 
@@ -360,13 +399,22 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <div class="drawer-backdrop" id="drawerBackdrop">
     <aside class="drawer" id="drawerPanel">
+      <div class="drawer-nav">
+        <div style="display:flex;gap:6px;">
+          <button class="btn" id="drawerPrev" style="padding:5px 10px;font-size:0.8rem;">&larr; Prev</button>
+          <button class="btn" id="drawerNext" style="padding:5px 10px;font-size:0.8rem;">Next &rarr;</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn" id="drawerStar" style="padding:5px 10px;font-size:0.8rem;">&#9734; Shortlist</button>
+          <button class="drawer-close" id="drawerClose">&times;</button>
+        </div>
+      </div>
       <div class="drawer-header">
         <div>
           <span class="badge" id="drawerCategory"></span>
           <h2 id="drawerTitle" style="margin:6px 0 2px;font-size:1.18rem;"></h2>
           <div id="drawerSub" class="muted" style="font-size:0.84rem;"></div>
         </div>
-        <button class="drawer-close" id="drawerClose">&times;</button>
       </div>
       <div class="detail-list" id="drawerBody"></div>
     </aside>
@@ -377,6 +425,7 @@ const COLLEGES = __DATA_JSON__;
 const MMR_DISTS = new Set(["Mumbai City", "Mumbai Suburban", "Thane", "Raigad", "Palghar"]);
 
 for (const c of COLLEGES) {
+  c._id = (c.aishe_code || "") + "::" + c.name;
   c._blob = [
     c.name, c.principal_name, c.college_phone, c.principal_phone, c.faculty_mobile,
     c.instagram_id, c.district, c.city, c.category, c.affiliation,
@@ -460,6 +509,13 @@ function highlight(text, tokens) {
   return out;
 }
 
+function waLink(mobStr) {
+  const first = (mobStr || "").split(",")[0].replace(/\D/g, "");
+  if (first.length === 12 && first.startsWith("91")) return `https://wa.me/${first}`;
+  if (first.length === 10) return `https://wa.me/91${first}`;
+  return "";
+}
+
 const state = {
   query: "",
   region: "all",
@@ -467,11 +523,33 @@ const state = {
   category: "",
   sort: "relevance",
   view: window.innerWidth < 820 ? "cards" : "table",
+  shortlistOnly: false,
+  analyticsOpen: false,
   flags: new Set(),
+  shortlist: new Set(JSON.parse(localStorage.getItem("mh_college_shortlist") || "[]")),
   page: 1,
   pageSize: 96,
   filtered: COLLEGES,
+  drawerSrNo: null,
 };
+
+function saveShortlist() {
+  localStorage.setItem("mh_college_shortlist", JSON.stringify([...state.shortlist]));
+  document.getElementById("shortlistCount").textContent = state.shortlist.size;
+}
+
+function toggleStar(id, ev) {
+  if (ev) ev.stopPropagation();
+  if (state.shortlist.has(id)) state.shortlist.delete(id);
+  else state.shortlist.add(id);
+  saveShortlist();
+  if (state.shortlistOnly) applyFilters();
+  else renderResults();
+  if (state.drawerSrNo !== null) {
+    const cur = COLLEGES.find(x => x.sr_no === state.drawerSrNo);
+    if (cur) updateDrawerStarBtn(cur);
+  }
+}
 
 function initTheme() {
   const saved = localStorage.getItem("theme") || "light";
@@ -489,9 +567,61 @@ document.getElementById("themeBtn").addEventListener("click", () => {
   updateThemeBtn(next);
 });
 
-// Relative Excel link when hosted on GitHub Pages
-if (location.hostname.endsWith("github.io") || location.protocol === "file:") {
-  document.getElementById("excelLink").setAttribute("href", "../data/maharashtra_colleges.xlsx");
+// Dynamic GitHub Pages Excel download link
+(function resolveExcelUrl() {
+  const link = document.getElementById("excelLink");
+  if (location.hostname.endsWith(".github.io")) {
+    const user = location.hostname.split(".")[0];
+    const repo = location.pathname.split("/").filter(Boolean)[0] || "Maharashtra-College-Database-2026";
+    link.href = `https://raw.githubusercontent.com/${user}/${repo}/main/data/maharashtra_colleges.xlsx`;
+  } else if (location.protocol === "file:") {
+    link.href = "../data/maharashtra_colleges.xlsx";
+  }
+})();
+
+function syncUrlParams() {
+  if (location.protocol === "file:") return;
+  const p = new URLSearchParams();
+  if (state.query) p.set("q", state.query);
+  if (state.region !== "all") p.set("region", state.region);
+  if (state.district) p.set("district", state.district);
+  if (state.category) p.set("category", state.category);
+  if (state.shortlistOnly) p.set("shortlist", "1");
+  if (state.flags.size) p.set("flags", [...state.flags].join(","));
+  const qs = p.toString();
+  history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+}
+
+function loadUrlParams() {
+  const p = new URLSearchParams(location.search);
+  if (p.get("q")) {
+    state.query = p.get("q");
+    document.getElementById("searchInput").value = state.query;
+    document.getElementById("clearSearchBtn").classList.add("visible");
+  }
+  if (p.get("region")) {
+    state.region = p.get("region");
+    document.querySelectorAll(".chip[data-region]").forEach(x => x.classList.toggle("active", x.dataset.region === state.region));
+  }
+  if (p.get("district")) {
+    state.district = p.get("district");
+    document.getElementById("districtFilter").value = state.district;
+  }
+  if (p.get("category")) {
+    state.category = p.get("category");
+    document.getElementById("categoryFilter").value = state.category;
+  }
+  if (p.get("shortlist") === "1") {
+    state.shortlistOnly = true;
+    document.getElementById("shortlistChip").classList.add("active");
+  }
+  if (p.get("flags")) {
+    for (const f of p.get("flags").split(",")) {
+      state.flags.add(f);
+      const el = document.querySelector(`.chip[data-flag="${f}"]`);
+      if (el) el.classList.add("active");
+    }
+  }
 }
 
 function initFilters() {
@@ -533,6 +663,7 @@ function initFilters() {
     catSel.appendChild(opt);
   });
 
+  saveShortlist();
   updateViewButtons();
 }
 
@@ -541,11 +672,58 @@ function updateViewButtons() {
   document.getElementById("cardViewBtn").classList.toggle("active", state.view === "cards");
 }
 
+function renderAnalytics() {
+  const panel = document.getElementById("analyticsPanel");
+  if (!state.analyticsOpen) { panel.classList.remove("open"); return; }
+  panel.classList.add("open");
+
+  const dCounts = {}, cCounts = {};
+  for (const c of state.filtered) {
+    if (c.district) dCounts[c.district] = (dCounts[c.district] || 0) + 1;
+    if (c.category) cCounts[c.category] = (cCounts[c.category] || 0) + 1;
+  }
+  const topD = Object.entries(dCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const topC = Object.entries(cCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxD = topD[0]?.[1] || 1;
+  const maxC = topC[0]?.[1] || 1;
+
+  panel.innerHTML = `
+    <div class="ana-col">
+      <h3>Top Districts (Current Results)</h3>
+      ${topD.map(([name, cnt]) => `<div class="ana-row" onclick="quickFilterDist('${esc(name)}')">
+        <span class="ana-name">${esc(name)}</span>
+        <div class="ana-bar-bg"><div class="ana-bar-fill" style="width:${Math.round(cnt / maxD * 100)}%"></div></div>
+        <span class="ana-count">${cnt}</span>
+      </div>`).join("") || '<span class="muted">No data</span>'}
+    </div>
+    <div class="ana-col">
+      <h3>Top Categories (Current Results)</h3>
+      ${topC.map(([name, cnt]) => `<div class="ana-row" onclick="quickFilterCat('${esc(name)}')">
+        <span class="ana-name">${esc(name)}</span>
+        <div class="ana-bar-bg"><div class="ana-bar-fill" style="width:${Math.round(cnt / maxC * 100)}%"></div></div>
+        <span class="ana-count">${cnt}</span>
+      </div>`).join("") || '<span class="muted">No data</span>'}
+    </div>
+  `;
+}
+
+function quickFilterDist(d) {
+  state.district = d;
+  document.getElementById("districtFilter").value = d;
+  applyFilters();
+}
+function quickFilterCat(cat) {
+  state.category = cat;
+  document.getElementById("categoryFilter").value = cat;
+  applyFilters();
+}
+
 function applyFilters() {
   const tokens = state.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const res = [];
 
   for (const c of COLLEGES) {
+    if (state.shortlistOnly && !state.shortlist.has(c._id)) continue;
     if (state.region === "mmr" && !MMR_DISTS.has(c.district)) continue;
     if (state.region !== "all" && state.region !== "mmr" && c.district !== state.region) continue;
     if (state.district && c.district !== state.district) continue;
@@ -570,6 +748,8 @@ function applyFilters() {
 
   state.filtered = res.map(x => x.item);
   state.page = 1;
+  syncUrlParams();
+  renderAnalytics();
   renderResults(tokens);
 }
 
@@ -582,9 +762,24 @@ function copyText(txt, btn, ev) {
   });
 }
 
+function updateDrawerStarBtn(c) {
+  const btn = document.getElementById("drawerStar");
+  const starred = state.shortlist.has(c._id);
+  btn.innerHTML = starred ? "&#9733; Shortlisted" : "&#9734; Shortlist";
+  btn.style.borderColor = starred ? "var(--amber)" : "";
+  btn.style.color = starred ? "var(--amber)" : "";
+}
+
 function openDrawer(srNo) {
-  const c = COLLEGES.find(x => x.sr_no === srNo);
+  const idx = state.filtered.findIndex(x => x.sr_no === srNo);
+  const c = idx >= 0 ? state.filtered[idx] : COLLEGES.find(x => x.sr_no === srNo);
   if (!c) return;
+  state.drawerSrNo = c.sr_no;
+
+  document.getElementById("drawerPrev").disabled = idx <= 0;
+  document.getElementById("drawerNext").disabled = idx < 0 || idx >= state.filtered.length - 1;
+  updateDrawerStarBtn(c);
+
   document.getElementById("drawerCategory").textContent = c.category || "Institution";
   document.getElementById("drawerTitle").textContent = c.name;
   document.getElementById("drawerSub").textContent = `${c.city || c.district} • ${c.district} ${c.aishe_code ? "• " + c.aishe_code : ""}`;
@@ -609,7 +804,10 @@ function openDrawer(srNo) {
     if (val && label === "Official Website") valHtml = `<a href="${esc(val)}" target="_blank" rel="noopener">${esc(val)}</a>`;
     if (val && label === "Official Email ID") valHtml = `<a href="mailto:${esc(val)}">${esc(val)}</a>`;
     if (val && label === "Instagram ID") valHtml = `<a class="ig-link" href="https://www.instagram.com/${esc(val.replace(/^@/, ''))}/" target="_blank" rel="noopener">${esc(val)}</a>`;
-    if (val && label.includes("Mobile")) valHtml = `<a class="mob-link" href="tel:${esc(val.split(',')[0].trim())}">${esc(val)}</a>`;
+    if (val && label.includes("Mobile")) {
+      const wa = waLink(val);
+      valHtml = `<a class="mob-link" href="tel:${esc(val.split(',')[0].trim())}">${esc(val)}</a>` + (wa ? `<a class="wa-pill" href="${wa}" target="_blank" rel="noopener">WhatsApp &#8599;</a>` : "");
+    }
 
     return `<div class="detail-item">
       <div>
@@ -621,6 +819,14 @@ function openDrawer(srNo) {
   }).join("");
 
   document.getElementById("drawerBackdrop").classList.add("open");
+}
+
+function stepDrawer(delta) {
+  if (state.drawerSrNo === null) return;
+  const idx = state.filtered.findIndex(x => x.sr_no === state.drawerSrNo);
+  if (idx < 0) return;
+  const next = state.filtered[idx + delta];
+  if (next) openDrawer(next.sr_no);
 }
 
 function renderResults(tokens = state.query.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
@@ -638,18 +844,23 @@ function renderResults(tokens = state.query.trim().toLowerCase().split(/\s+/).fi
     container.innerHTML = `<div class="cards-grid">` + slice.map(c => {
       const ig = (c.instagram_id || "").replace(/^@/, "");
       const mob = c.faculty_mobile || "";
+      const wa = waLink(mob);
       const phone = c.college_phone || c.principal_phone || "";
+      const starred = state.shortlist.has(c._id);
       return `<article class="college-card" onclick="openDrawer(${c.sr_no})">
         <div class="card-top">
           <div>
             <div class="college-title">${highlight(c.name, tokens)}</div>
             <div class="college-sub">${highlight(c.district, tokens)}${c.city && c.city !== c.district ? " • " + highlight(c.city, tokens) : ""}</div>
           </div>
-          <span class="badge">${esc(c.category.split(" ")[0])}</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <button class="star-btn ${starred ? 'starred' : ''}" onclick="toggleStar('${esc(c._id)}', event)" title="Shortlist">${starred ? "&#9733;" : "&#9734;"}</button>
+            <span class="badge">${esc(c.category.split(" ")[0])}</span>
+          </div>
         </div>
         <div class="card-meta">
           ${c.principal_name ? `<div class="card-row"><span class="muted">Principal:</span> <strong>${highlight(c.principal_name, tokens)}</strong></div>` : ""}
-          ${mob ? `<div class="card-row"><span class="badge badge-green">${highlight(mob, tokens)}</span><button class="copy-mini" onclick="copyText('${esc(mob)}', this, event)">Copy</button></div>` : (phone ? `<div class="card-row"><span class="muted">Tel:</span> ${highlight(phone, tokens)}</div>` : "")}
+          ${mob ? `<div class="card-row"><span class="badge badge-green">${highlight(mob, tokens)}</span>${wa ? `<a class="wa-pill" href="${wa}" target="_blank" rel="noopener" onclick="event.stopPropagation()">WA &#8599;</a>` : ""}<button class="copy-mini" onclick="copyText('${esc(mob)}', this, event)">Copy</button></div>` : (phone ? `<div class="card-row"><span class="muted">Tel:</span> ${highlight(phone, tokens)}</div>` : "")}
           ${ig ? `<div class="card-row"><a class="ig-link" href="https://www.instagram.com/${esc(ig)}/" target="_blank" rel="noopener" onclick="event.stopPropagation()">@${highlight(ig, tokens)}</a></div>` : ""}
         </div>
         <div class="card-footer">
@@ -662,8 +873,11 @@ function renderResults(tokens = state.query.trim().toLowerCase().split(/\s+/).fi
     const rows = slice.map(c => {
       const ig = (c.instagram_id || "").replace(/^@/, "");
       const mob = c.faculty_mobile || "";
+      const wa = waLink(mob);
       const tel = c.college_phone || c.principal_phone || "";
+      const starred = state.shortlist.has(c._id);
       return `<tr onclick="openDrawer(${c.sr_no})">
+        <td class="col-star"><button class="star-btn ${starred ? 'starred' : ''}" onclick="toggleStar('${esc(c._id)}', event)" title="Shortlist">${starred ? "&#9733;" : "&#9734;"}</button></td>
         <td class="col-sr">${c.sr_no}</td>
         <td>
           <div class="college-title">${highlight(c.name, tokens)}</div>
@@ -671,7 +885,7 @@ function renderResults(tokens = state.query.trim().toLowerCase().split(/\s+/).fi
         </td>
         <td>${c.principal_name ? highlight(c.principal_name, tokens) : '<span class="muted">—</span>'}</td>
         <td>
-          ${mob ? `<div><a class="mob-link" href="tel:${esc(mob.split(',')[0].trim())}" onclick="event.stopPropagation()">${highlight(mob, tokens)}</a><button class="copy-mini" onclick="copyText('${esc(mob)}', this, event)">Copy</button></div>` : ""}
+          ${mob ? `<div><a class="mob-link" href="tel:${esc(mob.split(',')[0].trim())}" onclick="event.stopPropagation()">${highlight(mob, tokens)}</a>${wa ? `<a class="wa-pill" href="${wa}" target="_blank" rel="noopener" onclick="event.stopPropagation()">WA</a>` : ""}<button class="copy-mini" onclick="copyText('${esc(mob)}', this, event)">Copy</button></div>` : ""}
           ${tel ? `<div style="font-size:0.8rem;color:var(--muted);margin-top:2px;">${highlight(tel, tokens)}</div>` : (!mob ? '<span class="muted">—</span>' : "")}
         </td>
         <td>${ig ? `<a class="ig-link" href="https://www.instagram.com/${esc(ig)}/" target="_blank" rel="noopener" onclick="event.stopPropagation()">@${highlight(ig, tokens)}</a>` : '<span class="muted">—</span>'}</td>
@@ -683,6 +897,7 @@ function renderResults(tokens = state.query.trim().toLowerCase().split(/\s+/).fi
     container.innerHTML = `<div class="table-card"><div class="table-scroll">
       <table>
         <thead><tr>
+          <th class="col-star">&#9733;</th>
           <th class="col-sr">#</th>
           <th>College &amp; Location</th>
           <th>Principal</th>
@@ -723,7 +938,7 @@ function exportFilteredCsv() {
   const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "maharashtra_colleges_filtered.csv";
+  a.download = state.shortlistOnly ? "maharashtra_colleges_shortlist.csv" : "maharashtra_colleges_filtered.csv";
   a.click();
 }
 
@@ -741,12 +956,35 @@ clearBtn.addEventListener("click", () => {
 
 document.addEventListener("keydown", e => {
   if (e.key === "/" && document.activeElement !== searchEl) { e.preventDefault(); searchEl.focus(); }
-  if (e.key === "Escape") document.getElementById("drawerBackdrop").classList.remove("open");
+  const drawerOpen = document.getElementById("drawerBackdrop").classList.contains("open");
+  if (drawerOpen) {
+    if (e.key === "Escape") { document.getElementById("drawerBackdrop").classList.remove("open"); state.drawerSrNo = null; }
+    if (e.key === "ArrowLeft") stepDrawer(-1);
+    if (e.key === "ArrowRight") stepDrawer(1);
+  }
 });
 
-document.getElementById("drawerClose").addEventListener("click", () => document.getElementById("drawerBackdrop").classList.remove("open"));
+document.getElementById("drawerClose").addEventListener("click", () => { document.getElementById("drawerBackdrop").classList.remove("open"); state.drawerSrNo = null; });
 document.getElementById("drawerBackdrop").addEventListener("click", e => {
-  if (e.target.id === "drawerBackdrop") document.getElementById("drawerBackdrop").classList.remove("open");
+  if (e.target.id === "drawerBackdrop") { document.getElementById("drawerBackdrop").classList.remove("open"); state.drawerSrNo = null; }
+});
+document.getElementById("drawerPrev").addEventListener("click", () => stepDrawer(-1));
+document.getElementById("drawerNext").addEventListener("click", () => stepDrawer(1));
+document.getElementById("drawerStar").addEventListener("click", () => {
+  const c = COLLEGES.find(x => x.sr_no === state.drawerSrNo);
+  if (c) toggleStar(c._id);
+});
+
+document.getElementById("analyticsBtn").addEventListener("click", () => {
+  state.analyticsOpen = !state.analyticsOpen;
+  document.getElementById("analyticsBtn").style.borderColor = state.analyticsOpen ? "var(--accent)" : "";
+  renderAnalytics();
+});
+
+document.getElementById("shortlistChip").addEventListener("click", () => {
+  state.shortlistOnly = !state.shortlistOnly;
+  document.getElementById("shortlistChip").classList.toggle("active", state.shortlistOnly);
+  applyFilters();
 });
 
 document.getElementById("districtFilter").addEventListener("change", e => { state.district = e.target.value; applyFilters(); });
@@ -778,11 +1016,13 @@ document.querySelectorAll(".chip[data-flag]").forEach(ch => {
 });
 
 document.getElementById("resetBtn").addEventListener("click", () => {
-  state.query = ""; state.region = "all"; state.district = ""; state.category = ""; state.sort = "relevance"; state.flags.clear();
+  state.query = ""; state.region = "all"; state.district = ""; state.category = ""; state.sort = "relevance";
+  state.shortlistOnly = false; state.flags.clear();
   searchEl.value = ""; clearBtn.classList.remove("visible");
   document.getElementById("districtFilter").value = "";
   document.getElementById("categoryFilter").value = "";
   document.getElementById("sortSelect").value = "relevance";
+  document.getElementById("shortlistChip").classList.remove("active");
   document.querySelectorAll(".chip[data-flag]").forEach(x => x.classList.remove("active"));
   document.querySelectorAll(".chip[data-region]").forEach(x => x.classList.toggle("active", x.dataset.region === "all"));
   applyFilters();
@@ -790,6 +1030,7 @@ document.getElementById("resetBtn").addEventListener("click", () => {
 
 initTheme();
 initFilters();
+loadUrlParams();
 applyFilters();
 </script>
 </body>
